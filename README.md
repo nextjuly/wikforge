@@ -51,6 +51,37 @@
 📊 后台管理           空间 / 用户 / 权限 / Profile / 词典 / 反馈 / 监控 / LLM 网关
 ```
 
+## 📸 产品截图
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/01-landing.png" alt="落地页"/>
+      <p align="center"><sub><b>落地页</b> · 紫色品牌色 + 三入口</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/02-login.png" alt="登录"/>
+      <p align="center"><sub><b>登录</b> · 邮箱密码 / OIDC 单点</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/03-documents.png" alt="文档管理"/>
+      <p align="center"><sub><b>文档管理</b> · 多文件上传 + 实时进度 + 标签/移动/批量</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/04-chat.png" alt="RAG 流式问答"/>
+      <p align="center"><sub><b>RAG 流式问答</b> · Markdown 渲染 + 引用标注 + 会话记忆</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="docs/screenshots/05-monitoring.png" alt="系统监控"/>
+      <p align="center"><sub><b>系统监控</b> · 文档队列状态 + CPU / 内存 / 磁盘实时</sub></p>
+    </td>
+  </tr>
+</table>
+
 ## 🚀 Quick Start
 
 ```bash
