@@ -20,7 +20,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: help up down reset logs logs-api logs-worker ps migrate seed verify psql shell-api shell-worker secrets first-run check-env clean clean-data prune-images smoke
+.PHONY: help up down reset logs logs-api logs-worker ps migrate seed verify psql shell-api shell-worker secrets first-run check-env clean clean-data prune-images smoke backup
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?##"}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -116,6 +116,9 @@ first-run: check-env ## 新机器首次部署: 启动 + 等待全部 healthy + �
 
 smoke: ## 跑端到端冒烟 (登录 → 上传 → 处理 → 搜索 → RAG)
 	./scripts/smoke-test.sh
+
+backup: ## 备份所有数据 (postgres + minio + qdrant + opensearch) 到 backups/
+	./scripts/backup.sh
 
 prune-images: ## 清理 docker 悬挂镜像 / 构建缓存 (不动 wikforge volume)
 	@echo "回收前:"
