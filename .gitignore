@@ -96,3 +96,4 @@ tmp/
 
 # ─── Kiro 任务跟踪 (可选: 如果团队共享则不忽略) ─────────────────────
 # .kiro/
+backend/celerybeat-schedule
