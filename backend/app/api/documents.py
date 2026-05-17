@@ -1,0 +1,483 @@
+"""Document management API routes for spaces, folders, tags, and documents.
+
+Endpoints:
+- POST/GET/PUT/DELETE /api/spaces - Space CRUD
+- POST/GET /api/spaces/{id}/folders - Folder CRUD within a space
+- GET /api/spaces/{id}/tree - Folder tree
+- DELETE /api/folders/{id} - Delete folder
+- POST/DELETE /api/documents/{id}/tags - Tag management
+- GET /api/tags - List all tags
+- GET /api/documents - Document listing with filters
+- PATCH /api/documents/{id}/move - Move document
+- POST /api/documents/upload - Upload files
+- POST /api/documents/import-url - Import from URL
+- GET /api/documents/{id}/progress - Get processing progress
+- POST /api/documents/{id}/retry - Retry failed document
+"""
+
+import uuid
+from typing import List
+
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.auth import get_current_user
+from app.core.database import get_db
+from app.models.user import User
+from app.services.document_service import DocumentService
+from app.services.upload_service import UploadService
+
+router = APIRouter(tags=["documents"])
+
+
+# ─── Request/Response Schemas ──────────────────────────────────────────
+
+
+class CreateSpaceRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    description: str | None = Field(None, max_length=200)
+
+
+class UpdateSpaceRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=50)
+    description: str | None = Field(None, max_length=200)
+
+
+class SpaceResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    created_by: str
+    created_at: str
+    updated_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class CreateFolderRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    parent_id: str | None = None
+
+
+class FolderResponse(BaseModel):
+    id: str
+    space_id: str
+    parent_id: str | None
+    name: str
+    depth: int
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class FolderTreeNode(BaseModel):
+    id: str
+    name: str
+    depth: int
+    parent_id: str | None
+    children: list["FolderTreeNode"] = []
+
+
+class AddTagRequest(BaseModel):
+    tag_name: str = Field(..., min_length=1, max_length=30)
+
+
+class TagResponse(BaseModel):
+    id: str
+    document_id: str
+    tag_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class MoveDocumentRequest(BaseModel):
+    target_space_id: str | None = None
+    target_folder_id: str | None = None
+
+
+class DocumentResponse(BaseModel):
+    id: str
+    space_id: str
+    folder_id: str | None
+    title: str
+    file_type: str
+    file_size: int
+    status: str
+    created_at: str
+    updated_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class PaginatedDocumentsResponse(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class ImportUrlRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    space_id: str
+    folder_id: str | None = None
+
+
+class UploadDocumentResponse(BaseModel):
+    id: str
+    title: str
+    file_type: str
+    file_size: int
+    storage_path: str
+    status: str
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentProgressResponse(BaseModel):
+    document_id: str
+    stage: str
+    progress: int
+    updated_at: str | None
+
+
+# ─── Dependencies ──────────────────────────────────────────────────────
+
+
+async def get_document_service(
+    db: AsyncSession = Depends(get_db),
+) -> DocumentService:
+    """Dependency to get DocumentService instance."""
+    return DocumentService(db=db)
+
+
+async def get_upload_service(
+    db: AsyncSession = Depends(get_db),
+) -> UploadService:
+    """Dependency to get UploadService instance."""
+    return UploadService(db=db)
+
+
+# ─── Space Endpoints ───────────────────────────────────────────────────
+
+
+@router.post("/api/spaces", response_model=SpaceResponse, status_code=201)
+async def create_space(
+    body: CreateSpaceRequest,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Create a new space."""
+    space = await service.create_space(
+        name=body.name,
+        description=body.description,
+        created_by=current_user.id,
+    )
+    return _space_to_response(space)
+
+
+@router.get("/api/spaces", response_model=list[SpaceResponse])
+async def list_spaces(
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """List all spaces."""
+    spaces = await service.list_spaces()
+    return [_space_to_response(s) for s in spaces]
+
+
+@router.put("/api/spaces/{space_id}", response_model=SpaceResponse)
+async def update_space(
+    space_id: uuid.UUID,
+    body: UpdateSpaceRequest,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Update a space."""
+    space = await service.update_space(
+        space_id=space_id,
+        name=body.name,
+        description=body.description,
+    )
+    return _space_to_response(space)
+
+
+@router.delete("/api/spaces/{space_id}", status_code=204)
+async def delete_space(
+    space_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Delete a space and all its contents (cascade)."""
+    await service.delete_space(space_id)
+
+
+# ─── Folder Endpoints ──────────────────────────────────────────────────
+
+
+@router.post(
+    "/api/spaces/{space_id}/folders", response_model=FolderResponse, status_code=201
+)
+async def create_folder(
+    space_id: uuid.UUID,
+    body: CreateFolderRequest,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Create a folder within a space."""
+    parent_id = uuid.UUID(body.parent_id) if body.parent_id else None
+    folder = await service.create_folder(
+        space_id=space_id,
+        name=body.name,
+        parent_id=parent_id,
+    )
+    return _folder_to_response(folder)
+
+
+@router.get("/api/spaces/{space_id}/folders", response_model=list[FolderResponse])
+async def list_folders(
+    space_id: uuid.UUID,
+    parent_id: uuid.UUID | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """List folders in a space, optionally filtered by parent."""
+    folders = await service.list_folders(space_id=space_id, parent_id=parent_id)
+    return [_folder_to_response(f) for f in folders]
+
+
+@router.get("/api/spaces/{space_id}/tree", response_model=list[FolderTreeNode])
+async def get_folder_tree(
+    space_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Get the full folder tree for a space."""
+    tree = await service.get_folder_tree(space_id)
+    return tree
+
+
+@router.delete("/api/folders/{folder_id}", status_code=204)
+async def delete_folder(
+    folder_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Delete a folder and all its contents (cascade)."""
+    await service.delete_folder(folder_id)
+
+
+# ─── Tag Endpoints ─────────────────────────────────────────────────────
+
+
+@router.post("/api/documents/{document_id}/tags", response_model=TagResponse, status_code=201)
+async def add_tag(
+    document_id: uuid.UUID,
+    body: AddTagRequest,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Add a tag to a document."""
+    tag = await service.add_tag(document_id=document_id, tag_name=body.tag_name)
+    return _tag_to_response(tag)
+
+
+@router.delete("/api/documents/{document_id}/tags/{tag_name}", status_code=204)
+async def remove_tag(
+    document_id: uuid.UUID,
+    tag_name: str,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Remove a tag from a document."""
+    await service.remove_tag(document_id=document_id, tag_name=tag_name)
+
+
+@router.get("/api/tags", response_model=list[str])
+async def list_tags(
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """List all unique tags in the system."""
+    return await service.list_tags()
+
+
+# ─── Document Endpoints ────────────────────────────────────────────────
+
+
+@router.get("/api/documents", response_model=PaginatedDocumentsResponse)
+async def list_documents(
+    space_id: uuid.UUID | None = Query(None),
+    folder_id: uuid.UUID | None = Query(None),
+    tag: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """List documents with optional filtering and pagination."""
+    result = await service.list_documents(
+        space_id=space_id,
+        folder_id=folder_id,
+        tag=tag,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedDocumentsResponse(
+        items=[_document_to_response(d) for d in result["items"]],
+        total=result["total"],
+        page=result["page"],
+        page_size=result["page_size"],
+        pages=result["pages"],
+    )
+
+
+@router.patch("/api/documents/{document_id}/move", response_model=DocumentResponse)
+async def move_document(
+    document_id: uuid.UUID,
+    body: MoveDocumentRequest,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Move a document to a different space and/or folder."""
+    target_space_id = uuid.UUID(body.target_space_id) if body.target_space_id else None
+    target_folder_id = uuid.UUID(body.target_folder_id) if body.target_folder_id else None
+
+    document = await service.move_document(
+        document_id=document_id,
+        target_space_id=target_space_id,
+        target_folder_id=target_folder_id,
+    )
+    return _document_to_response(document)
+
+
+# ─── Upload Endpoints ──────────────────────────────────────────────────
+
+
+@router.post("/api/documents/upload", response_model=list[UploadDocumentResponse], status_code=201)
+async def upload_documents(
+    files: List[UploadFile] = File(...),
+    space_id: str = Query(...),
+    folder_id: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    service: UploadService = Depends(get_upload_service),
+):
+    """Upload multiple documents (max 50 files, max 100MB each).
+
+    Supported formats: PDF, DOCX, PPTX, TXT, MD, HTML.
+    """
+    space_uuid = uuid.UUID(space_id)
+    folder_uuid = uuid.UUID(folder_id) if folder_id else None
+
+    documents = await service.upload_files(
+        files=files,
+        space_id=space_uuid,
+        folder_id=folder_uuid,
+        uploaded_by=current_user.id,
+    )
+    return [_upload_doc_to_response(d) for d in documents]
+
+
+@router.post("/api/documents/import-url", response_model=UploadDocumentResponse, status_code=201)
+async def import_url(
+    body: ImportUrlRequest,
+    current_user: User = Depends(get_current_user),
+    service: UploadService = Depends(get_upload_service),
+):
+    """Import a document from a URL (30 second timeout, trafilatura extraction)."""
+    space_uuid = uuid.UUID(body.space_id)
+    folder_uuid = uuid.UUID(body.folder_id) if body.folder_id else None
+
+    document = await service.import_url(
+        url=body.url,
+        space_id=space_uuid,
+        folder_id=folder_uuid,
+        uploaded_by=current_user.id,
+    )
+    return _upload_doc_to_response(document)
+
+
+@router.get("/api/documents/{document_id}/progress", response_model=DocumentProgressResponse)
+async def get_document_progress(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: UploadService = Depends(get_upload_service),
+):
+    """Get document processing progress (cached in Redis, updated every 5 seconds)."""
+    progress = await service.get_document_progress(document_id)
+    return DocumentProgressResponse(**progress)
+
+
+@router.post("/api/documents/{document_id}/retry", response_model=UploadDocumentResponse)
+async def retry_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: UploadService = Depends(get_upload_service),
+):
+    """Retry processing a failed document (resets status, re-enqueues).
+
+    Max 3 retries allowed. After 3 failures, document is marked as permanent failure.
+    """
+    document = await service.retry_document(document_id)
+    return _upload_doc_to_response(document)
+
+
+# ─── Response Helpers ──────────────────────────────────────────────────
+
+
+def _space_to_response(space) -> SpaceResponse:
+    return SpaceResponse(
+        id=str(space.id),
+        name=space.name,
+        description=space.description,
+        created_by=str(space.created_by),
+        created_at=space.created_at.isoformat(),
+        updated_at=space.updated_at.isoformat(),
+    )
+
+
+def _folder_to_response(folder) -> FolderResponse:
+    return FolderResponse(
+        id=str(folder.id),
+        space_id=str(folder.space_id),
+        parent_id=str(folder.parent_id) if folder.parent_id else None,
+        name=folder.name,
+        depth=folder.depth,
+        created_at=folder.created_at.isoformat(),
+    )
+
+
+def _tag_to_response(tag) -> TagResponse:
+    return TagResponse(
+        id=str(tag.id),
+        document_id=str(tag.document_id),
+        tag_name=tag.tag_name,
+    )
+
+
+def _document_to_response(document) -> DocumentResponse:
+    return DocumentResponse(
+        id=str(document.id),
+        space_id=str(document.space_id),
+        folder_id=str(document.folder_id) if document.folder_id else None,
+        title=document.title,
+        file_type=document.file_type,
+        file_size=document.file_size,
+        status=document.status.value if hasattr(document.status, "value") else document.status,
+        created_at=document.created_at.isoformat(),
+        updated_at=document.updated_at.isoformat(),
+    )
+
+
+def _upload_doc_to_response(document) -> UploadDocumentResponse:
+    return UploadDocumentResponse(
+        id=str(document.id),
+        title=document.title,
+        file_type=document.file_type,
+        file_size=document.file_size,
+        storage_path=document.storage_path,
+        status=document.status.value if hasattr(document.status, "value") else document.status,
+        created_at=document.created_at.isoformat(),
+    )
