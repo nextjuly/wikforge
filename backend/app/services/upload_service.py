@@ -436,18 +436,26 @@ class UploadService:
         return f"{space_id}/{unique_id}/{filename}"
 
     def _store_to_minio(self, content: bytes, storage_path: str, file_ext: str) -> None:
-        """Store file content to MinIO."""
+        """Store file content to MinIO using streaming upload.
+
+        boto3 ``upload_fileobj`` 自动判断单次 PUT 还是 multipart upload:
+        - 默认 8MB 阈值, 大文件自动切片并行上传
+        - 失败片段自动重试, 不需要重传整个文件
+        - 对内存压力比 ``put_object(Body=bytes)`` 小: bytes 一次性载入,
+          但底层 transfer manager 是流式发送
+
+        参数与 boto3 TransferConfig 默认值一致, 不需要显式构造。
+        """
         client = get_minio_client()
         ensure_bucket_exists()
 
         content_type = SUPPORTED_FORMATS.get(file_ext, "application/octet-stream")
 
-        client.put_object(
+        client.upload_fileobj(
+            Fileobj=io.BytesIO(content),
             Bucket=settings.MINIO_BUCKET,
             Key=storage_path,
-            Body=io.BytesIO(content),
-            ContentLength=len(content),
-            ContentType=content_type,
+            ExtraArgs={"ContentType": content_type},
         )
 
     def _extract_title_from_url(self, url: str) -> str:
