@@ -68,13 +68,21 @@ jobs:
           JWT_SECRET_KEY: test-key-for-ci
           INITIAL_ADMIN_EMAIL: admin@wikforge.com
           INITIAL_ADMIN_PASSWORD: Test@123
+        # 添加超时避免某个测试 hang 整个 CI;
+        # 跳过需要真实 OpenSearch/Qdrant/Postgres 的集成测试与依赖大模型的重型测试
+        timeout-minutes: 15
         run: |
+          pip install pytest-timeout
           pytest tests/ \
             --ignore=tests/integration \
+            --ignore=tests/test_universal_parser.py \
+            --ignore=tests/test_universal_parser_no_profile_scenarios.py \
+            --ignore=tests/test_universal_parser_trigger.py \
+            --ignore=tests/test_marker_pdf_parser.py \
             -q \
             --tb=short \
-            -x \
-            --maxfail=10
+            --timeout=30 \
+            --maxfail=20
 
   # ─────────────────────────────────────────────────────────────────
   # Frontend: lint + type check + build
