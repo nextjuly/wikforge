@@ -42,6 +42,7 @@ const STATUS_MAP: Record<string, { label: string; className: string }> = {
   cleaning: { label: "清洗中", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
   chunking: { label: "分块中", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
   embedding: { label: "向量化中", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
+  indexing: { label: "入库中", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
   completed: { label: "已完成", className: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
   failed: { label: "失败", className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
 };
@@ -58,7 +59,7 @@ function StatusBadge({ status }: { status: string }) {
         config.className
       )}
     >
-      {["parsing", "cleaning", "chunking", "embedding"].includes(status) && (
+      {["parsing", "cleaning", "chunking", "embedding", "indexing"].includes(status) && (
         <Loader2 className="mr-1 h-3 w-3 animate-spin" />
       )}
       {config.label}
@@ -136,7 +137,7 @@ export function DocumentList({
   // Poll every 5 seconds if any document is in processing state
   useEffect(() => {
     const hasProcessing = documents.some((d) =>
-      ["pending", "parsing", "cleaning", "chunking", "embedding"].includes(
+      ["pending", "parsing", "cleaning", "chunking", "embedding", "indexing"].includes(
         d.status
       )
     );
