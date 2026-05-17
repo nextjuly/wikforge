@@ -277,6 +277,11 @@ class IntelligentChunker:
         chunks: list[Chunk] = []
         chunk_index = 0
 
+        # 预处理: 合并 "只有 heading 没有 blocks" 的 section 到下一个 section,
+        # 避免短文档的 H1 被独立切成无意义的小 chunk。
+        # 例: "# Wikforge 是什么\n正文..." 会先被切成两个 section, 这里再合回去。
+        sections = self._merge_heading_only_sections(sections)
+
         for section in sections:
             title_chain = " > ".join(section["title_chain"]) if section["title_chain"] else ""
 
@@ -308,6 +313,55 @@ class IntelligentChunker:
                 chunk_index += 1
 
         return chunks
+
+    def _merge_heading_only_sections(self, sections: list[dict]) -> list[dict]:
+        """合并 "只有 heading 没有正文 blocks" 的 section 到下一个 section。
+
+        chunker 之前的 ``_split_into_sections`` 在遇到 ``respect_heading_level``
+        以下的标题时会强制切 section, 这导致 ``# H1\\n正文`` 这样的常见结构被
+        切成 ``[只有 H1, 正文]`` 两个 section, 进而被切成 2 个独立 chunk
+        (其中一个只是标题行, 严重碎片化)。
+
+        本方法把没有 blocks 的 heading-only section 的 heading 作为下一个
+        section 的 title_chain 前缀, 让它们合成一个有意义的 chunk。
+
+        如果最后一个 section 是 heading-only, 保持原样 emit
+        (确实是个空标题, chunker 后续会自然丢弃或合并到上一个)。
+        """
+        if not sections:
+            return sections
+
+        merged: list[dict] = []
+        pending_heading: dict | None = None
+
+        for section in sections:
+            has_content = bool(section.get("blocks"))
+            if not has_content and section.get("heading"):
+                # 只有 heading: 攒着等下一个 section 合并
+                pending_heading = section
+                continue
+
+            if pending_heading and has_content:
+                # 把上一个 heading-only section 的标题挂到当前 section 头部
+                # 通过 title_chain 体现层级 (供前端 / RAG 上下文显示)
+                pending_chain = pending_heading.get("title_chain", [])
+                section_chain = section.get("title_chain", [])
+                # 如果当前 section 已经包含了 pending heading (因为它们在同一栈中),
+                # 不重复添加
+                if pending_chain and (
+                    not section_chain or section_chain[: len(pending_chain)] != pending_chain
+                ):
+                    section = {**section, "title_chain": pending_chain + section_chain}
+                pending_heading = None
+
+            merged.append(section)
+
+        # 文档末尾的孤立 heading: 保留为独立 section, chunker 后续 min_tokens
+        # 合并逻辑会试图把它合到上一个 chunk
+        if pending_heading is not None:
+            merged.append(pending_heading)
+
+        return merged
 
     def _blocks_to_segments(
         self, blocks: list[ProcessedBlock], table_config: TableConfig
