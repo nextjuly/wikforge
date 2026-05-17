@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from app.services.parsers.base import Block, ParsedDocument
 from app.services.profile_matcher import (
     BoilerplateConfig,
-    ChunkingConfig,
     DocumentProfileConfig,
     HeadingRule,
     TableConfig,

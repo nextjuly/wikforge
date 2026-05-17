@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
-from app.models.base import Base  # re-exported for convenience
 
 settings = get_settings()
 

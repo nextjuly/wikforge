@@ -20,6 +20,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user, is_admin_user
@@ -28,8 +29,6 @@ from app.models.permission import AccessLevel, Permission, ResourceType
 from app.models.user import User
 from app.services.document_service import DocumentService
 from app.services.upload_service import UploadService
-
-from sqlalchemy import select
 
 
 async def _get_user_allowed_space_ids(

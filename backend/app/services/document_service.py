@@ -29,7 +29,6 @@ from app.models.document_tag import DocumentTag
 from app.models.folder import Folder
 from app.models.space import Space
 
-
 logger = logging.getLogger(__name__)
 
 

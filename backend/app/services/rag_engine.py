@@ -17,7 +17,6 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from app.core.config import get_settings
 from app.services.llm_gateway import LLMGateway, LLMGatewayError
 from app.services.search_service import SearchHit, SearchService
 

@@ -23,7 +23,6 @@ from app.core.redis import get_redis
 from app.models.user import User
 from app.services.auth_service import AuthService
 
-
 # 与 ``app.scripts.init_db.create_admin_user`` 使用的环境变量保持一致：管理员
 # 由初始化脚本播种，此处的依赖只识别该单一账号。后续接入完整 RBAC（角色/属性
 # 模型）后，可把这里替换成真正的角色判定，无需修改路由层的 ``Depends``。

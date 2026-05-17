@@ -279,7 +279,7 @@ async def ask_stream(
                 # 可据此决定是否显示重试按钮；终端用户看到的 message 始终为
                 # 中文友好文案而非英文堆栈。
                 yield _encode_sse(_humanize_error_event(event))
-        except Exception as exc:  # noqa: BLE001 - 兜底，避免连接挂死
+        except Exception:  # noqa: BLE001 - 兜底，避免连接挂死
             logger.error("QA-stream: 未预期错误", exc_info=True)
             yield _encode_sse(
                 StreamEvent(

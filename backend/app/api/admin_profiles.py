@@ -30,6 +30,8 @@ from app.services.profile_candidate_service import (
 )
 from app.services.profile_version_service import (
     create_version_snapshot as _shared_create_version_snapshot,
+)
+from app.services.profile_version_service import (
     get_admin_user_id as _shared_get_admin_user_id,
 )
 

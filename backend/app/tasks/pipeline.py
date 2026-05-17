@@ -20,6 +20,7 @@ import uuid
 try:
     from celery import chain
     from celery.exceptions import MaxRetriesExceededError, SoftTimeLimitExceeded
+
     from app.core.celery_app import celery_app
     CELERY_AVAILABLE = True
 except ImportError:
@@ -85,6 +86,7 @@ def _update_document_status(document_id: str, stage: str, progress: int = 0) -> 
     """
     try:
         import redis as redis_lib
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -136,6 +138,7 @@ def _mark_document_failed(document_id: str, stage: str, error: str) -> None:
     """
     try:
         import redis as redis_lib
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -364,7 +367,7 @@ def profile_match(self, parse_result: dict) -> dict:
 
     try:
         from app.services.parsers.base import Block, ParsedDocument
-        from app.services.profile_matcher import ProfileMatcher, profile_from_dict
+        from app.services.profile_matcher import ProfileMatcher
 
         # Reconstruct ParsedDocument from serialized blocks
         blocks = [
@@ -659,7 +662,6 @@ def process_document(self, match_result: dict) -> dict:
     try:
         from app.services.document_processor import DocumentProcessor
         from app.services.parsers.base import Block, ParsedDocument
-        from app.services.profile_matcher import profile_from_dict
         from app.services.quality_scorer import QualityScorer
 
         # 1) 重建 ParsedDocument（与 profile_match 的反序列化逻辑保持一致）。
@@ -881,6 +883,7 @@ def embed_chunks(self, chunk_result: dict) -> dict:
 
     try:
         import asyncio
+
         from app.services.embedding_service import EmbeddingService
 
         chunks = chunk_result["chunks"]
@@ -987,7 +990,6 @@ def index_chunks(self, embed_result: dict) -> dict:
             ChunkPayload,
             IndexingService,
             update_document_db_status,
-            update_pipeline_progress,
         )
 
         chunks = embed_result.get("chunks", [])
@@ -1545,6 +1547,7 @@ def _load_profiles_from_db() -> list:
     """
     try:
         from sqlalchemy import create_engine, text
+
         from app.core.config import get_settings
         from app.services.profile_matcher import profile_from_dict
 
@@ -1602,6 +1605,7 @@ def _get_document_info(document_id: str) -> dict | None:
     """
     try:
         from sqlalchemy import create_engine, text
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -1647,6 +1651,7 @@ def _get_document_space_id(document_id: str) -> str | None:
     """
     try:
         from sqlalchemy import create_engine, text
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -1699,6 +1704,7 @@ def _resolve_profile_for_processing(
     保证 ``DocumentProcessor`` 总有 Profile 可用、不会让管线在评分阶段卡死。
     """
     from sqlalchemy import create_engine, text
+
     from app.core.config import get_settings
     from app.services.profile_matcher import (
         BoilerplateConfig,
@@ -1792,6 +1798,7 @@ def _persist_document_quality_score(document_id: str, score_dict: dict) -> None:
         import json as _json
 
         from sqlalchemy import create_engine, text
+
         from app.core.config import get_settings
 
         settings = get_settings()

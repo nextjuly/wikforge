@@ -360,10 +360,6 @@ class SearchService:
             Top 50 search hits from dense vector search
         """
         from qdrant_client.models import (
-            FieldCondition,
-            Filter,
-            MatchAny,
-            MatchValue,
             NamedVector,
             SearchParams,
         )
@@ -428,7 +424,6 @@ class SearchService:
         """
         from qdrant_client.models import (
             NamedSparseVector,
-            SearchParams,
             SparseVector,
         )
 

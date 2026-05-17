@@ -33,7 +33,6 @@ from app.core.config import get_settings
 from app.services.document_processor import ProcessedBlock, ProcessedDocument
 from app.services.llm_gateway import LLMGateway, LLMGatewayError
 from app.services.parsers.base import Block, ParsedDocument
-from app.services.profile_matcher import profile_from_dict, profile_to_dict
 
 logger = logging.getLogger(__name__)
 

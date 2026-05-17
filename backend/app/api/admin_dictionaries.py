@@ -31,7 +31,6 @@ from app.models.domain_dictionary import DomainDictionary
 from app.models.user import User
 from app.services.dictionary_service import (
     DictionaryService,
-    validate_term,
 )
 
 logger = logging.getLogger(__name__)

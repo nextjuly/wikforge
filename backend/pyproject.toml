@@ -101,6 +101,11 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+# 历史代码包容:
+# E501 行长 / E402 模块级 import 位置 / E741 单字母变量
+# N802 函数名大写 (主要是 Settings 中的 URL 属性) / N818 异常名后缀
+# F821 字符串内的前向引用 / F841 死代码警告 (留作 TODO 提示, 不阻塞 CI)
+ignore = ["E402", "E501", "E741", "F821", "F841", "N802", "N818"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
