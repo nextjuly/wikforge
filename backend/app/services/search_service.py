@@ -28,6 +28,47 @@ RRF_CANDIDATE_LIMIT = 100
 RERANK_TOP_N = 20
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 50
+
+
+# ─── Cross-Encoder model singleton ────────────────────────────────────
+#
+# 加载 BAAI/bge-reranker-base 大约要 400MB 内存 + 5-10 秒, 不能每次搜索都加载。
+# 用模块级缓存确保同一 worker 进程内只加载一次。
+# 多个 Celery worker 进程会各自加载自己的副本, 在合理范围内。
+_cross_encoder_instance = None
+_cross_encoder_load_failed = False
+
+
+def _get_cross_encoder():
+    """惰性加载 CrossEncoder 单例。
+
+    首次调用尝试加载 BAAI/bge-reranker-base; 失败后将 _cross_encoder_load_failed
+    置为 True, 后续调用直接返回 None 跳过, 避免反复触发加载错误。
+    """
+    global _cross_encoder_instance, _cross_encoder_load_failed
+
+    if _cross_encoder_instance is not None:
+        return _cross_encoder_instance
+    if _cross_encoder_load_failed:
+        return None
+
+    try:
+        from sentence_transformers import CrossEncoder
+
+        # 用 BAAI/bge-reranker-base: 中英双语效果好, 模型 280MB
+        # 首次启动会从 HuggingFace 下载, 后续走 ~/.cache/huggingface 缓存
+        logger.info("Loading CrossEncoder model: BAAI/bge-reranker-base ...")
+        _cross_encoder_instance = CrossEncoder("BAAI/bge-reranker-base")
+        logger.info("CrossEncoder loaded successfully")
+        return _cross_encoder_instance
+    except ImportError:
+        logger.info("sentence-transformers not installed; using fallback scoring")
+        _cross_encoder_load_failed = True
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to load CrossEncoder model: {e}")
+        _cross_encoder_load_failed = True
+        return None
 HIGHLIGHT_MAX_CHARS = 200
 HIGHLIGHT_MARK_OPEN = "<mark>"
 HIGHLIGHT_MARK_CLOSE = "</mark>"
@@ -604,31 +645,22 @@ class SearchService:
         Attempts to use sentence-transformers CrossEncoder model.
         Falls back to a simple scoring heuristic if model is unavailable.
 
-        Args:
-            query: Search query
-            candidates: Candidates to score
-
-        Returns:
-            List of relevance scores
+        模型在首次调用时延迟加载 + 缓存为单例, 避免每次搜索都重新加载 400MB 权重。
         """
         try:
-            from sentence_transformers import CrossEncoder
+            cross_encoder = _get_cross_encoder()
+            if cross_encoder is None:
+                return self._fallback_rerank_scores(query, candidates)
 
-            model = CrossEncoder("BAAI/bge-reranker-base")
             pairs = [[query, c.content] for c in candidates]
 
             # Run in executor since model inference is CPU-bound
             loop = asyncio.get_event_loop()
             scores = await loop.run_in_executor(
                 None,
-                lambda: model.predict(pairs).tolist(),
+                lambda: cross_encoder.predict(pairs).tolist(),
             )
             return scores
-        except ImportError:
-            logger.info(
-                "sentence-transformers not available, using fallback scoring"
-            )
-            return self._fallback_rerank_scores(query, candidates)
         except Exception as e:
             logger.warning(f"CrossEncoder model failed: {e}")
             return self._fallback_rerank_scores(query, candidates)

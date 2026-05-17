@@ -86,3 +86,9 @@ mypy>=1.14,<2.0
 # ---------- System metrics ----------
 # 用于 /api/admin/monitoring 端点采集 CPU / 内存 / 磁盘使用率
 psutil>=6.0,<8.0
+
+# ---------- Cross-Encoder reranker ----------
+# 用于 SearchService._cross_encoder_rerank 的真实重排
+# (BAAI/bge-reranker-base 模型权重首次启动时下载, ~400MB)
+# 不装时 SearchService 自动降级到 bigram fallback (检索精度 -10~20%)
+sentence-transformers>=3.0,<5.0
