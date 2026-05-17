@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Upload, PanelLeftClose, PanelLeft } from "lucide-react";
+import { Upload, PanelLeftClose, PanelLeft, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { FileUpload } from "@/components/documents/file-upload";
@@ -14,8 +14,11 @@ import { TagManagerDialog } from "@/components/documents/tag-manager";
 import { TagFilter } from "@/components/documents/tag-manager";
 import { MoveDialog } from "@/components/documents/move-dialog";
 import { DeleteDialog } from "@/components/documents/delete-dialog";
+import { apiClient, ApiClientError } from "@/lib/api-client";
+import { useToast } from "@/components/ui/toast";
 
 export default function DocumentsPage() {
+  const { addToast } = useToast();
   // Navigation state
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | undefined>();
   const [selectedFolderId, setSelectedFolderId] = useState<
@@ -89,6 +92,31 @@ export default function DocumentsPage() {
           >
             <Upload className="mr-1 h-4 w-4" />
             上传文档
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (!confirm("确认清理所有处理失败的文档?")) return;
+              try {
+                const r = await apiClient.post<{ deleted: number; ids: string[] }>(
+                  "/api/documents/batch-delete",
+                  { status: "failed" }
+                );
+                addToast({
+                  type: "success",
+                  message: `已清理 ${r.deleted} 个失败文档`,
+                });
+                setRefreshTrigger((v) => v + 1);
+              } catch (err) {
+                const msg = err instanceof ApiClientError ? err.message : "清理失败";
+                addToast({ type: "error", message: "清理失败", description: msg });
+              }
+            }}
+            title="一键清理 status=failed 的文档"
+          >
+            <Trash2 className="mr-1 h-4 w-4" />
+            清理失败
           </Button>
         </div>
       </div>

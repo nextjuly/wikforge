@@ -532,3 +532,102 @@ def _upload_doc_to_response(document) -> UploadDocumentResponse:
         status=document.status.value if hasattr(document.status, "value") else document.status,
         created_at=document.created_at.isoformat(),
     )
+
+
+# ─── Document Delete Endpoints ─────────────────────────────────────────
+
+
+class BatchDeleteRequest(BaseModel):
+    """批量删除请求体: 可按 ids 删除, 或按 status 过滤删除 (推荐 'failed' 清理)。"""
+
+    ids: list[str] | None = None
+    status: str | None = None  # 仅接受单个 status 字符串, 如 "failed"
+
+
+class BatchDeleteResponse(BaseModel):
+    deleted: int
+    ids: list[str]
+
+
+@router.delete("/api/documents/{document_id}", status_code=204)
+async def delete_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+    db: AsyncSession = Depends(get_db),
+):
+    """单个文档删除 (会清理 MinIO / Qdrant / OpenSearch 中的关联数据)。"""
+    # 权限校验: 用户必须对这个文档所在的 space 有访问权
+    allowed = await _get_user_allowed_space_ids(current_user, db)
+    if allowed is not None:
+        # 读 document 的 space_id 校验权限
+        from fastapi import HTTPException
+        from app.models.document import Document
+        doc_row = (
+            await db.execute(select(Document.space_id).where(Document.id == document_id))
+        ).scalar_one_or_none()
+        if doc_row is None:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        if doc_row not in allowed:
+            raise HTTPException(status_code=403, detail="无权访问该文档")
+
+    await service.delete_document(document_id=document_id)
+    return None
+
+
+@router.post("/api/documents/batch-delete", response_model=BatchDeleteResponse)
+async def batch_delete_documents(
+    body: BatchDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+    db: AsyncSession = Depends(get_db),
+) -> BatchDeleteResponse:
+    """批量删除文档 (常用于一键清理 status='failed' 的僵尸文档)。
+
+    传 ``ids`` (优先): 按 UUID 列表精确删除。
+    传 ``status``: 删除该状态下当前用户能访问的所有文档 (admin 可访问全部)。
+    两者必须二选一传。
+    """
+    from fastapi import HTTPException
+    from app.models.document import Document
+
+    if not body.ids and not body.status:
+        raise HTTPException(status_code=400, detail="ids 或 status 必须至少传一个")
+    if body.ids and body.status:
+        raise HTTPException(status_code=400, detail="ids 与 status 不能同时使用")
+
+    allowed = await _get_user_allowed_space_ids(current_user, db)
+
+    # 根据条件解析出待删除 id 列表
+    target_ids: list[uuid.UUID] = []
+    if body.ids:
+        for s in body.ids:
+            try:
+                target_ids.append(uuid.UUID(s))
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"非法 UUID: {s}")
+        # 校验权限: 必须全部都在 allowed 范围内
+        if allowed is not None:
+            stmt = select(Document.id, Document.space_id).where(Document.id.in_(target_ids))
+            rows = (await db.execute(stmt)).all()
+            for row_id, row_space in rows:
+                if row_space not in allowed:
+                    raise HTTPException(
+                        status_code=403, detail=f"无权删除文档 {row_id}"
+                    )
+    else:
+        # by status
+        stmt = select(Document.id).where(Document.status == body.status)
+        if allowed is not None:
+            stmt = stmt.where(Document.space_id.in_(allowed))
+        target_ids = list((await db.execute(stmt)).scalars().all())
+
+    deleted_ids: list[str] = []
+    for doc_id in target_ids:
+        try:
+            await service.delete_document(document_id=doc_id)
+            deleted_ids.append(str(doc_id))
+        except Exception:  # noqa: BLE001 — 某一条失败不阻塞其它
+            continue
+
+    return BatchDeleteResponse(deleted=len(deleted_ids), ids=deleted_ids)
