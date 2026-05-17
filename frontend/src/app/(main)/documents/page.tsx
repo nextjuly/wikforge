@@ -96,7 +96,17 @@ export default function DocumentsPage() {
       {/* Upload area (collapsible) */}
       {showUpload && (
         <div className="rounded-lg border p-4">
-          <FileUpload onUploadComplete={handleUploadComplete} />
+          {!selectedSpaceId ? (
+            <div className="text-center text-sm text-muted-foreground py-6">
+              请先在左侧选择要上传的知识空间
+            </div>
+          ) : (
+            <FileUpload
+              spaceId={selectedSpaceId}
+              folderId={selectedFolderId}
+              onUploadComplete={handleUploadComplete}
+            />
+          )}
         </div>
       )}
 

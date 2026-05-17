@@ -26,6 +26,10 @@ export interface UploadFile {
 }
 
 interface FileUploadProps {
+  /** 上传到哪个 space (必传; 未选择 space 时禁用上传) */
+  spaceId?: string;
+  /** 上传到哪个 folder (可选) */
+  folderId?: string;
   onUploadComplete?: () => void;
 }
 
@@ -44,7 +48,7 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
-export function FileUpload({ onUploadComplete }: FileUploadProps) {
+export function FileUpload({ spaceId, folderId, onUploadComplete }: FileUploadProps) {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -120,9 +124,19 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
     const pendingFiles = files.filter((f) => f.status === "pending");
     if (pendingFiles.length === 0) return;
 
+    if (!spaceId) {
+      setGlobalError("请先在左侧选择要上传的知识空间");
+      return;
+    }
+
     const API_BASE_URL =
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const token = localStorage.getItem("access_token");
+
+    // 拼 query 参数: ?space_id=xxx&folder_id=yyy (folder_id 可选)
+    const qs = new URLSearchParams({ space_id: spaceId });
+    if (folderId) qs.set("folder_id", folderId);
+    const uploadUrl = `${API_BASE_URL}/api/documents/upload?${qs.toString()}`;
 
     for (const uploadFile of pendingFiles) {
       setFiles((prev) =>
@@ -167,7 +181,7 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
             reject(new Error("网络错误"));
           });
 
-          xhr.open("POST", `${API_BASE_URL}/api/documents/upload`);
+          xhr.open("POST", uploadUrl);
           if (token) {
             xhr.setRequestHeader("Authorization", `Bearer ${token}`);
           }
@@ -189,7 +203,7 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
     }
 
     onUploadComplete?.();
-  }, [files, onUploadComplete]);
+  }, [files, onUploadComplete, spaceId, folderId]);
 
   const clearCompleted = useCallback(() => {
     setFiles((prev) => prev.filter((f) => f.status !== "success"));
