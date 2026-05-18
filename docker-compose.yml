@@ -185,10 +185,17 @@ services:
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-Admin@123}
       - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost","http://localhost:3000"]}
       - DEBUG=${DEBUG:-false}
+      # 模型缓存目录: cross-encoder reranker (BAAI/bge-reranker-base) 在 api 进程加载,
+      # 与 worker 共享同一个 models_cache volume, 避免重复下载 ~400MB 权重
+      - HF_HOME=/models/huggingface
+      - HF_HUB_CACHE=/models/huggingface
+      - TRANSFORMERS_CACHE=/models/huggingface
+      - SENTENCE_TRANSFORMERS_HOME=/models/sentence_transformers
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - models_cache:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -214,7 +221,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: wikforge-worker
-    command: celery -A app.core.celery_app:celery_app worker --loglevel=info --concurrency=4
+    # 并发降到 2 (PDF 解析模型 ~2-3GB, 4 并发会 OOM SIGKILL)
+    command: celery -A app.core.celery_app:celery_app worker --loglevel=info --concurrency=2
     env_file:
       - .env
     environment:
@@ -243,8 +251,15 @@ services:
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
       - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@wikforge.com}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-Admin@123}
+      # 模型缓存目录: 让 huggingface / surya / marker 把模型下载到持久化 volume
+      - HF_HOME=/models/huggingface
+      - HF_HUB_CACHE=/models/huggingface
+      - TRANSFORMERS_CACHE=/models/huggingface
+      - SENTENCE_TRANSFORMERS_HOME=/models/sentence_transformers
+      - DATALAB_CACHE_DIR=/models/datalab
     volumes:
       - ./backend:/app
+      - models_cache:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -342,3 +357,6 @@ volumes:
   minio_data:
   redis_data:
   flower_data:
+  # 共享 huggingface / surya / marker 模型缓存,
+  # 避免 worker 每次重启都重新下载 ~2GB 模型
+  models_cache:

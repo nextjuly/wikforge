@@ -72,7 +72,10 @@ celery_app.conf.update(
     result_expires=3600,  # results expire after 1 hour
     # --- Worker resource hygiene ---
     worker_max_tasks_per_child=100,
-    worker_max_memory_per_child=512_000,  # 512MB
+    # 4GB 上限. PDF 解析器 (marker/surya) 加载模型权重峰值 ~2-3GB,
+    # 512MB 会导致 SIGKILL 死循环 (worker 被杀 -> 重启 -> 再次加载模型 -> 再杀)
+    # 容器自身 mem_limit 在 docker-compose 配置, 这里只是 graceful 上限。
+    worker_max_memory_per_child=4_000_000,  # 4GB
     # --- Beat schedule (定时任务) ---
     beat_schedule={
         # 每 5 分钟扫一次卡住的文档,标记为 failed
