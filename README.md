@@ -107,6 +107,41 @@ open http://localhost:6333/dashboard # Qdrant Dashboard
 
 完整部署 / 升级 / 备份 / 排错请看 [`docs/deploy.md`](docs/deploy.md)。
 
+## 🔑 服务入口与凭证
+
+> **不要把真实密码写进 README**——以下表格只列出**入口地址**和**`.env` 中对应的环境变量名**。
+> 启动后从你本机的 `.env`（已在 `.gitignore`，不入库）查实际值。
+
+| 服务 | 入口 | 用户名 | 密码 (`.env` key) |
+|---|---|---|---|
+| **Wikforge 主系统** | http://localhost | `INITIAL_ADMIN_EMAIL` | `INITIAL_ADMIN_PASSWORD` |
+| **API 文档** (Swagger) | http://localhost:8000/docs | — (登录后复用主系统 JWT) | — |
+| **LiteLLM Admin UI** | http://localhost:4000/ui | `LITELLM_UI_USERNAME` | `LITELLM_UI_PASSWORD` |
+| **LiteLLM Master Key** (调 API) | http://localhost:4000 | — | `LITELLM_MASTER_KEY` |
+| **Flower** (Celery 监控) | http://localhost:5555 | `FLOWER_USERNAME` | `FLOWER_PASSWORD` |
+| **MinIO Console** | http://localhost:9001 | `MINIO_ACCESS_KEY` | `MINIO_SECRET_KEY` |
+| **Qdrant Dashboard** | http://localhost:6333/dashboard | — (内网信任,无鉴权) | — |
+| **OpenSearch** | http://localhost:9200 | `OPENSEARCH_USER` | `OPENSEARCH_PASSWORD` |
+| **PostgreSQL** | `localhost:15432` | `POSTGRES_USER` (默认 `wikforge`) | `POSTGRES_PASSWORD` |
+| **Redis** | `localhost:16379` | — | `REDIS_PASSWORD` (默认空) |
+
+**快速查当前真实凭证** (本机执行):
+
+```bash
+# 列出所有登录相关的 env (会打印密码,只在私人终端跑)
+grep -E '^(INITIAL_ADMIN|LITELLM_(MASTER|UI)|FLOWER|MINIO|POSTGRES|OPENSEARCH|REDIS)_' .env
+
+# 或者只看主系统密码
+grep ^INITIAL_ADMIN_PASSWORD .env
+```
+
+**重置某个密码**:
+
+1. 改 `.env` 里对应的 key
+2. `docker compose up -d --force-recreate <service>` 让新值生效
+3. 主系统 admin 密码改后还需要 `make reset-admin` 或在数据库里重置 (见 `docs/deploy.md`)
+
+
 ## 🏗️ 架构
 
 ```mermaid
