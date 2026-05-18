@@ -272,9 +272,10 @@ services:
       - HF_HUB_DISABLE_XET=1
       # surya / marker 的模型缓存路径走 MODEL_CACHE_DIR (BaseSettings 字段名)
       - MODEL_CACHE_DIR=/models/datalab/models
-      # PDF 解析模式: auto 表示 <2MB 用 fitz, 大文件用 marker
-      # marker 模式需要 ~3GB 内存,Docker VM 内存 <8GB 时建议设为 fitz
-      - PDF_PARSER_MODE=${PDF_PARSER_MODE:-auto}
+      # PDF 解析模式: fitz (设计原意) | marker (复杂版面+OCR,需 ~16GB) | auto
+      # 设计文档里 marker 只做 layout-aware 解析,扫描件 / 复杂版面交给 L3 多模态 LLM
+      # (UniversalParser, 默认 qwen-vl-plus)。所以默认 fitz, 让 L3 分担复杂场景。
+      - PDF_PARSER_MODE=${PDF_PARSER_MODE:-fitz}
     volumes:
       - ./backend:/app
       - models_cache:/models

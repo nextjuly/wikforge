@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     UNIVERSAL_PARSER_PAGE_DPI: int = 150
     # LibreOffice headless 转 PDF 的整体超时（秒）。仅作用于单个文档的一次转换。
     UNIVERSAL_PARSER_LIBREOFFICE_TIMEOUT: int = 60
+    # 单页 LLM 调用超时 (秒)。qwen-vl-plus 平均 30-60s/页, 慢页 90s+,
+    # 所以默认 120s 比早期 60s 更稳; 单文档 20 页时最大约 40 分钟。
+    UNIVERSAL_PARSER_PAGE_TIMEOUT: float = 120.0
     # 任务 10.3：单页喂给 LLM 的原始文本最大字符数。原始文本越长越容易触发上下文
     # 溢出 / 让模型偏离图像内容；过短会丢失上下文。3000 字符约等于 ~1500 tokens。
     UNIVERSAL_PARSER_MAX_RAW_TEXT_CHARS: int = 3000

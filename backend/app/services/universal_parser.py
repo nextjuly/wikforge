@@ -171,7 +171,7 @@ class UniversalParser:
         model: str | None = None,
         vision_model: str | None = None,
         text_model: str | None = None,
-        page_timeout: float = 60.0,
+        page_timeout: float | None = None,
         max_raw_text_chars: int | None = None,
         fallback_chunk_chars: int | None = None,
     ):
@@ -244,7 +244,14 @@ class UniversalParser:
             else:
                 self.text_model = None
 
-        self.page_timeout = page_timeout
+        # page_timeout 解析: 显式参数 → settings → 默认 120s
+        # qwen-vl-plus 单页推理 + base64 图片传输平均 30-60s, 慢的页可能 90s+,
+        # 所以默认 120s 比 60s 更稳。可通过 UNIVERSAL_PARSER_PAGE_TIMEOUT 覆盖。
+        if page_timeout is None:
+            page_timeout = float(
+                getattr(settings, "UNIVERSAL_PARSER_PAGE_TIMEOUT", 120.0)
+            )
+        self.page_timeout = max(page_timeout, 1.0)
 
         # 任务 10.2: page rasterization knobs come from settings so deployments
         # can tune DPI / LibreOffice timeout without code changes.
