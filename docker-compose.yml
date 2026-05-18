@@ -193,6 +193,9 @@ services:
       - HF_HUB_CACHE=/models/huggingface
       - TRANSFORMERS_CACHE=/models/huggingface
       - SENTENCE_TRANSFORMERS_HOME=/models/sentence_transformers
+      # 关掉 huggingface 新版 xet (CAS) 协议, 在国内网络下经常卡死;
+      # 走传统 HTTP 下载更稳。
+      - HF_HUB_DISABLE_XET=1
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -259,6 +262,8 @@ services:
       - HF_HUB_CACHE=/models/huggingface
       - TRANSFORMERS_CACHE=/models/huggingface
       - SENTENCE_TRANSFORMERS_HOME=/models/sentence_transformers
+      # 关掉 huggingface xet (CAS) 协议, 国内网络下经常卡死, 走传统 HTTP
+      - HF_HUB_DISABLE_XET=1
       # surya / marker 的模型缓存路径走 MODEL_CACHE_DIR (BaseSettings 字段名)
       - MODEL_CACHE_DIR=/models/datalab/models
       # PDF 解析模式: auto 表示 <2MB 用 fitz, 大文件用 marker

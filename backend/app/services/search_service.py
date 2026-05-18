@@ -32,43 +32,75 @@ MAX_PAGE_SIZE = 50
 
 # ─── Cross-Encoder model singleton ────────────────────────────────────
 #
-# 加载 BAAI/bge-reranker-base 大约要 400MB 内存 + 5-10 秒, 不能每次搜索都加载。
+# 加载 BAAI/bge-reranker-base 大约要 400MB 内存 + 5-30 秒, 不能每次搜索都加载。
 # 用模块级缓存确保同一 worker 进程内只加载一次。
 # 多个 Celery worker 进程会各自加载自己的副本, 在合理范围内。
+#
+# 并发安全:
+# - main.py startup 通过 run_in_executor 后台预热 (非阻塞 startup)
+# - 用户请求并发到达时: 已加载 → 直接返回; 加载中 → 立即返回 None 走 bigram fallback
+#   不阻塞请求路径; 加载失败 → 永久 fallback。
+import threading
+
 _cross_encoder_instance = None
 _cross_encoder_load_failed = False
+_cross_encoder_loading = False
+_cross_encoder_lock = threading.Lock()
 
 
 def _get_cross_encoder():
     """惰性加载 CrossEncoder 单例。
 
-    首次调用尝试加载 BAAI/bge-reranker-base; 失败后将 _cross_encoder_load_failed
-    置为 True, 后续调用直接返回 None 跳过, 避免反复触发加载错误。
+    - 已加载: 直接返回 instance
+    - 加载中 (其它线程预热): 返回 None,本次请求走 fallback,避免阻塞
+    - 加载失败: 返回 None,后续不再尝试
+
+    后台线程在 main.py 的 startup hook 调用本函数完成预热。
     """
-    global _cross_encoder_instance, _cross_encoder_load_failed
+    global _cross_encoder_instance, _cross_encoder_load_failed, _cross_encoder_loading
 
     if _cross_encoder_instance is not None:
         return _cross_encoder_instance
     if _cross_encoder_load_failed:
         return None
 
-    try:
-        from sentence_transformers import CrossEncoder
+    # 拿不到锁说明已经有线程在加载,本次请求走 fallback
+    if not _cross_encoder_lock.acquire(blocking=False):
+        if not _cross_encoder_loading:
+            # 极少数竞态: 锁刚释放但还没设置 instance 状态,再判断一次
+            return _cross_encoder_instance
+        return None
 
-        # 用 BAAI/bge-reranker-base: 中英双语效果好, 模型 280MB
-        # 首次启动会从 HuggingFace 下载, 后续走 ~/.cache/huggingface 缓存
-        logger.info("Loading CrossEncoder model: BAAI/bge-reranker-base ...")
-        _cross_encoder_instance = CrossEncoder("BAAI/bge-reranker-base")
-        logger.info("CrossEncoder loaded successfully")
-        return _cross_encoder_instance
-    except ImportError:
-        logger.info("sentence-transformers not installed; using fallback scoring")
-        _cross_encoder_load_failed = True
-        return None
-    except Exception as e:
-        logger.warning(f"Failed to load CrossEncoder model: {e}")
-        _cross_encoder_load_failed = True
-        return None
+    try:
+        # 双检锁: 拿到锁后再次检查避免重复加载
+        if _cross_encoder_instance is not None:
+            return _cross_encoder_instance
+        if _cross_encoder_load_failed:
+            return None
+
+        _cross_encoder_loading = True
+
+        try:
+            from sentence_transformers import CrossEncoder
+
+            # 用 BAAI/bge-reranker-base: 中英双语效果好, 模型 280MB
+            # 首次启动会从 HuggingFace 下载, 后续走 ~/.cache/huggingface 缓存
+            logger.info("Loading CrossEncoder model: BAAI/bge-reranker-base ...")
+            _cross_encoder_instance = CrossEncoder("BAAI/bge-reranker-base")
+            logger.info("CrossEncoder loaded successfully")
+            return _cross_encoder_instance
+        except ImportError:
+            logger.info("sentence-transformers not installed; using fallback scoring")
+            _cross_encoder_load_failed = True
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to load CrossEncoder model: {e}")
+            _cross_encoder_load_failed = True
+            return None
+        finally:
+            _cross_encoder_loading = False
+    finally:
+        _cross_encoder_lock.release()
 HIGHLIGHT_MAX_CHARS = 200
 HIGHLIGHT_MARK_OPEN = "<mark>"
 HIGHLIGHT_MARK_CLOSE = "</mark>"

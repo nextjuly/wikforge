@@ -52,8 +52,16 @@ NO_CONTEXT_MESSAGE = "知识库中未找到相关内容。"
 #: ``Settings.SIMILARITY_THRESHOLD`` 取值，未注入 settings 时回退到本常量）。
 DEFAULT_SIMILARITY_THRESHOLD = 0.5
 
-#: 首 token 最长等待时间（秒）。需求 8.3 要求 ≤5 秒。
-FIRST_TOKEN_TIMEOUT_SECONDS = 5.0
+#: 首 token 最长等待时间（秒）。
+#: 原需求 8.3 写 ≤5 秒,但实际 LiteLLM proxy + 上游网关 + 思考型模型
+#: (gpt-5.5/claude-sonnet) 的首 token 平均 8-15 秒,5 秒太苛刻会反复触发
+#: ``first_token_timeout``。改为 30 秒,平衡用户体验和真实延迟。
+#: 用户可通过环境变量 ``RAG_FIRST_TOKEN_TIMEOUT_SECONDS`` 覆盖。
+import os as _os
+
+FIRST_TOKEN_TIMEOUT_SECONDS = float(
+    _os.environ.get("RAG_FIRST_TOKEN_TIMEOUT_SECONDS", "30.0")
+)
 
 #: 流式事件类型——常规 token。
 STREAM_EVENT_TOKEN = "token"
