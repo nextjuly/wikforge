@@ -89,18 +89,23 @@
 # 1. 配置环境变量
 cp .env.example .env
 make secrets         # 生成强随机密钥, 拷贝到 .env
-vim .env             # 至少填: CPA_API_KEY (Chat) / DASHSCOPE_API_KEY (Embedding)
+vim .env             # 至少填:
+                     #   CPA_API_BASE / CPA_API_KEY        (Chat 上游)
+                     #   DASHSCOPE_API_KEY                 (Embedding 上游, 阿里百炼)
+                     #   INITIAL_ADMIN_PASSWORD            (建议随机, 启动后自动播种 admin)
 
-# 2. 一键拉起 9 个服务
+# 2. 一键拉起 11 个服务
 make first-run
 
 # 3. 验证 (走一遍 登录→上传→搜索→RAG)
-./scripts/smoke-test.sh
+INITIAL_ADMIN_PASSWORD=$(grep ^INITIAL_ADMIN_PASSWORD .env | cut -d= -f2) \
+  ./scripts/smoke-test.sh
 
-# 4. 访问
-open http://localhost                # 前端 (admin@wikforge.com / Admin@123)
+# 4. 访问 (账号密码见下方"服务入口与凭证")
+open http://localhost                # 前端
 open http://localhost:8000/docs      # API 文档 (Swagger)
 open http://localhost:4000/ui        # LiteLLM Admin
+open http://localhost:5555           # Flower (Celery 监控)
 open http://localhost:9001           # MinIO Console
 open http://localhost:6333/dashboard # Qdrant Dashboard
 ```
@@ -152,13 +157,15 @@ flowchart LR
     subgraph Wikforge["🚀 Wikforge"]
         FE[Next.js 14<br/>前端]
         API[FastAPI<br/>API Server]
-        Worker[Celery<br/>Worker × 4]
-        LiteLLM[LiteLLM Proxy<br/>多模型网关]
+        Worker[Celery Worker<br/>concurrency=1<br/>PDF/Embed/Index]
+        Beat[Celery Beat<br/>定时任务]
+        Flower[Flower<br/>队列监控]
+        LiteLLM[LiteLLM Proxy<br/>多模型网关 + UI]
     end
 
     subgraph Storage["💾 存储层"]
         PG[(PostgreSQL<br/>元数据)]
-        Redis[(Redis<br/>缓存/Broker)]
+        Redis[(Redis<br/>AOF 持久化<br/>Broker/Cache)]
         OS[(OpenSearch<br/>BM25)]
         QD[(Qdrant<br/>向量)]
         MinIO[(MinIO<br/>对象存储)]
@@ -166,7 +173,7 @@ flowchart LR
 
     subgraph Upstream["☁️ 上游模型"]
         CPA[CPA 网关<br/>gpt-5.5 / claude / qwen]
-        DS[阿里百炼<br/>text-embedding-v4]
+        DS[阿里百炼<br/>text-embedding-v3/v4]
     end
 
     User --> Browser
@@ -174,6 +181,8 @@ flowchart LR
     FE <--> API
     API <--> PG & Redis & OS & QD & MinIO & LiteLLM
     API -.触发任务.-> Worker
+    Beat -.定时调度.-> Worker
+    Flower -.读取.-> Redis
     Worker <--> PG & Redis & OS & QD & MinIO & LiteLLM
     LiteLLM --> CPA & DS
 
@@ -186,7 +195,7 @@ flowchart LR
 
     class FE fe
     class API api
-    class Worker worker
+    class Worker,Beat,Flower worker
     class LiteLLM llm
     class PG,Redis,OS,QD,MinIO store
     class CPA,DS upstream
@@ -268,7 +277,7 @@ flowchart TB
 ## 🧰 常用命令
 
 ```bash
-make help            # 查看全部命令 (14 个)
+make help            # 查看全部命令 (19 个)
 make ps              # 服务状态
 make logs            # 跟踪所有日志
 make logs-api        # 只看 api
@@ -280,6 +289,10 @@ make seed            # 手动 init_db (admin + 默认 Profile)
 make verify          # 跑 verify_compose 完整健康检查
 make secrets         # 生成一组强随机密钥
 make first-run       # 新机器: 启动 + 等待 healthy + 提示访问
+make smoke           # 端到端冒烟 (登录→上传→搜索→RAG)
+make backup          # 备份 postgres + minio + qdrant + opensearch 到 backups/
+make clean           # 清 Docker 悬挂镜像 / build cache
+make clean-data      # 清业务数据 (保留 admin / Profile)
 make down            # 停止 (保留 volume)
 make reset           # 完全清理 (会丢数据!)
 ```
@@ -297,44 +310,55 @@ wikforge/
 │   │   ├── core/         # 基础设施 (db/redis/qdrant/opensearch/minio)
 │   │   └── scripts/      # init_db / api-entrypoint
 │   ├── alembic/          # 数据库迁移
-│   ├── tests/            # 单元 + 集成测试 (1981 个)
+│   ├── tests/            # 单元 + 集成测试 (2054 个)
 │   └── eval/             # 检索质量评估 (Recall@K / MRR / NDCG)
 ├── frontend/             # Next.js 14
 │   ├── src/app/          # App Router 页面
 │   ├── src/components/   # UI 组件
 │   ├── src/lib/          # api-client / utils
 │   └── src/stores/       # Zustand stores
-├── litellm/config.yaml   # LiteLLM Proxy 模型路由配置
-├── scripts/              # verify_compose / smoke-test / postgres-init
+├── litellm/
+│   └── config.yaml       # LiteLLM Proxy 模型路由 (api_base/key 走 .env)
+├── scripts/              # verify_compose / smoke-test / backup / postgres-init
+├── secrets/              # 本地凭证速查 (gitignored,不入库)
 ├── docs/                 # 部署文档 / 架构图 / 资源
-└── docker-compose.yml    # 9 服务编排
+└── docker-compose.yml    # 11 服务编排 (api / worker / beat / flower / litellm + 6 存储)
 ```
 
 ## 🛣️ Roadmap
 
 > 总计 55 项, 详情参见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
 
+### 已完成 (本轮)
+
+- ✅ **B2** 真 Cross-Encoder reranker (BAAI/bge-reranker-base, module-level singleton 缓存)
+- ✅ **B3** Bigram fallback 加日志告警
+- ✅ **A4 / A5** Embedding 走 LiteLLM Proxy + Redis 缓存
+- ✅ **C1 / C2** presigned URL 下载 + multipart 上传
+- ✅ **D2** 备份脚本 (postgres + minio + qdrant + opensearch)
+- ✅ **E1 / E2** 修改密码 + 修改邮箱/显示名 + Settings 页
+- ✅ **F4** Redis AOF 持久化
+- ✅ **PDF OOM 修复** marker 模型缓存到共享 volume + `PDF_PARSER_MODE=auto` 小文件走 fitz
+- ✅ **retry 入队修复** retry 真的 enqueue Celery (之前只改 db status)
+
 ### 近期 (P1)
 
-- [ ] **A1** `list_spaces` / `list_documents` 加权限过滤
+- [ ] **A1 / A2** `list_spaces` / `list_documents` 加权限过滤
 - [ ] **B1** OpenSearch 装 IK 中文分词器 (中文召回 +30~50%)
-- [ ] **B2** 真 Cross-Encoder reranker (BAAI/bge-reranker-base)
 - [ ] **B4-B5** Profile 自动匹配 / LLM 兜底实测
+- [ ] **A6** UploadService commit 边界重构
 
 ### 中期 (P2)
 
-- [ ] **A4** Embedding 走 LiteLLM Proxy 统一管控
-- [ ] **A5** LiteLLM Redis 缓存验证
-- [ ] **A6** UploadService commit 边界重构
-- [ ] **C1** 文档下载用 presigned URL
-- [ ] **C2** 大文件 multipart 上传
 - [ ] **C6** 升级到 query_points API, 解锁 qdrant-client 1.15+
+- [ ] **C9** qdrant collection / opensearch index 启动时自动 ensure
+- [ ] **D3** nginx 反代 (TLS 终止 + SSE proxy_buffering off)
+- [ ] **D9** 全局 health-check API + 前端 dashboard
 
 ### 远期 (P3)
 
-- [ ] **D2-D3** 备份 cron + nginx 反代 (TLS / SSE)
-- [ ] **E1-E12** 用户体验扩展 (改密 / 版本管理 / 审计 / 批量操作 / i18n / 移动端)
-- [ ] **F1-F7** 性能 / HA (gunicorn / Redis Sentinel / Qdrant HNSW 调优)
+- [ ] **E3-E12** 用户体验扩展 (版本管理 / 审计 / 批量 / i18n / 移动端)
+- [ ] **F1-F7** 性能 / HA (gunicorn / Postgres 池 / OpenSearch JVM / Qdrant HNSW 调优)
 - [ ] **G1-G5** CI/CD 集成测试 / 检索质量自动评估
 
 ## 📚 文档
@@ -352,12 +376,16 @@ wikforge/
 私有仓库, 内网部署。
 
 - ✅ `.env` 在 `.gitignore` 第 1 行, 凭证不入库
+- ✅ `secrets/` 目录在 `.gitignore`, 本地凭证速查表 (`secrets/CREDENTIALS.md`) 永不入库
+- ✅ LiteLLM 上游 `api_base` / `api_key` 都走 env, 不硬编码网关域名
 - ✅ JWT 签发 / 轮换 / 失败次数锁定
 - ✅ Permission Pre-Filtering 在向量库 + 全文库 + Cache 三层一致
 - ✅ Profile / 解析失败队列 + 重试上限 + 审核闭环
-- ⚠️ 默认 admin 密码 `Admin@123`, **首次登录立即修改**
-- ⚠️ Master Key / Secret Key 占位符为 `change-me-*`, 部署前必须替换
-- ❌ 当前无 HTTPS 终止, 部署到公网前请加反向代理
+- ✅ Celery Watchdog 5 分钟扫一次僵尸文档,自动标 failed
+- ✅ Redis AOF 持久化 (everysec sync), 重启不丢任务队列 / 会话状态
+- ⚠️ 首次启动会用 `INITIAL_ADMIN_PASSWORD` 播种 admin 账号, 务必先设强密码
+- ⚠️ `make secrets` 一键生成所有强随机密钥 (Master Key / Salt / Postgres / MinIO 等)
+- ❌ 当前无 HTTPS 终止, 部署到公网前请加反向代理 (Roadmap D3)
 
 ## 📜 License
 
