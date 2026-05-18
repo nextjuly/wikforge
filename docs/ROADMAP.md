@@ -24,7 +24,7 @@
 | ID | 项目 | 工时 | 状态 |
 |---|---|---|---|
 | B1 | OpenSearch 装 IK 中文分词器 | 30 分钟 | ⬜ |
-| B2 | 真 Cross-Encoder reranker (BAAI/bge-reranker-base) | 1.5 小时 | ⬜ |
+| B2 | 真 Cross-Encoder reranker (BAAI/bge-reranker-base) | 1.5 小时 | ✅ (module-level singleton 缓存) |
 | B3 | Bigram fallback 加日志告警 | 15 分钟 | ✅ (已做) |
 | B4 | Profile 匹配实测 (国标 + 扫描版 PDF) | 30 分钟 | ⬜ |
 | B5 | Universal Parser LLM 兜底实测 | 30 分钟 | ⬜ |
@@ -34,8 +34,8 @@
 
 | ID | 项目 | 工时 | 状态 |
 |---|---|---|---|
-| C1 | storage_path 改 presigned URL | 30 分钟 | ⬜ |
-| C2 | MinIO 大文件 multipart 上传 | 30 分钟 | ⬜ |
+| C1 | storage_path 改 presigned URL | 30 分钟 | ✅ (`GET /api/documents/{id}/download-url`) |
+| C2 | MinIO 大文件 multipart 上传 | 30 分钟 | ✅ (`upload_fileobj` 自动 multipart) |
 | C3 | Celery 任务统一时间限制策略 | 30 分钟 | ⬜ |
 | C4 | api 容器 `--reload` 在生产关闭 | 5 分钟 | ⬜ |
 | C5 | api/worker .env 注入逻辑统一 | 15 分钟 | ⬜ |
@@ -49,7 +49,7 @@
 | ID | 项目 | 工时 | 状态 |
 |---|---|---|---|
 | D1 | Docker registry mirror 配置 | 5 分钟 | ⬜ |
-| D2 | 备份 cron 脚本 (postgres + minio + qdrant) | 30 分钟 | ⬜ |
+| D2 | 备份 cron 脚本 (postgres + minio + qdrant) | 30 分钟 | ✅ (`scripts/backup.sh` + `make backup`) |
 | D3 | nginx 反代配置 (终止 TLS + SSE proxy_buffering) | 30 分钟 | ⬜ |
 | D4 | SSE proxy_buffering off 示例 (合并到 D3) | - | - |
 | D5 | docker-compose 加 logging driver max-size | 15 分钟 | ⬜ |
@@ -62,8 +62,8 @@
 
 | ID | 项目 | 工时 | 状态 |
 |---|---|---|---|
-| E1 | 修改密码功能 | 1 小时 | ⬜ |
-| E2 | 修改邮箱 / 显示名 | 30 分钟 | ⬜ |
+| E1 | 修改密码功能 | 1 小时 | ✅ (`/api/auth/change-password` + `/settings` 页) |
+| E2 | 修改邮箱 / 显示名 | 30 分钟 | ✅ (`/api/auth/me` PATCH) |
 | E3 | 文档版本管理 / 回滚 | 1 天 | ⬜ |
 | E4 | 文档操作审计日志 | 4 小时 | ⬜ |
 | E5 | RAG 答案 赞/踩 反馈 (打通 feedback 表) | 4 小时 | ⬜ |
@@ -82,7 +82,7 @@
 | F1 | api 多 worker (gunicorn / uvicorn workers) | 15 分钟 | ⬜ |
 | F2 | Celery worker concurrency 调优 | 15 分钟 | ⬜ |
 | F3 | Postgres 连接池调优 | 15 分钟 | ⬜ |
-| F4 | Redis 持久化 (AOF) | 15 分钟 | ⬜ |
+| F4 | Redis 持久化 (AOF) | 15 分钟 | ✅ (everysec + 64MB rewrite trigger) |
 | F5 | OpenSearch JVM heap 调优 | 15 分钟 | ⬜ |
 | F6 | Qdrant HNSW 参数调优 | 30 分钟 | ⬜ |
 | F7 | LiteLLM Proxy 限流 / 配额 | 30 分钟 | ⬜ |
@@ -131,3 +131,17 @@
 - ✅ **OpenSearch 磁盘水位线放宽**: low/high/flood_stage 调到 95/97/99% (开发场景),避免 30G/32G 满了就触发 flood_stage 把 index 设为 read-only
 - ✅ **watchdog SQL enum cast bug**: `WHERE status = ANY(:states)` 在 PostgreSQL 里 enum vs text[] 不匹配,加 `status::text` 强转,watchdog 任务恢复正常
 - ✅ **端到端验证**: 两个真实 PDF (简历 222KB / 技术规范 661KB) 全程 parse → profile_match → universal_parser_check → process → chunk → embed → index 跑通,status=completed,progress=100%
+
+> 2026-05-18 端到端可用性 + 隐私收尾 (上午)
+
+- ✅ **文档行操作菜单显示不全修复**: 表格 `overflow-x-auto` 容器 + dropdown 用 `absolute` 定位会被裁剪 (尤其是底部行的"删除"项)。改用 React Portal 渲染到 `document.body` + `fixed` 定位 + `getBoundingClientRect` 计算位置 + 下方空间不够自动向上弹 + 滚动 / resize / 外部点击自动关闭。
+- ✅ **README 加"服务入口与凭证"表**: 列出 10 个服务入口 (主系统 / API 文档 / LiteLLM Admin / Master Key / Flower / MinIO / Qdrant / OpenSearch / Postgres / Redis),每项注明对应的 `.env` key 名;真实密码不写入 README,放在 `secrets/CREDENTIALS.md` (gitignored)。
+- ✅ **LiteLLM 网关域名隐私清理**: 之前 `litellm/config.yaml` 硬编码 `https://cpa.912011.xyz:16666/v1` 已经在 2 次提交中入库 (虽 repo private 但仍是隐私泄露)。处理:
+  1. 把 `api_base` 也改成 `os.environ/CPA_API_BASE` (与 api_key 同一处理方式)
+  2. `.env.example` 加占位 `CPA_API_BASE=https://api.openai.com/v1`,真实值只在本地 `.env` (gitignored)
+  3. 用 `git filter-repo --replace-text` 重写整个 32 commit 历史,把 `cpa.912011.xyz:16666` 全部替换成 `litellm-upstream`
+  4. `git push --force --no-verify origin main` 覆盖远端
+  5. 验证: 本地 + 远端 历史中 `912011` 出现次数都为 0
+  6. `.gitignore` 加 `.git-replacements*.txt` 防御 (filter-repo 替换规则文件含敏感字符串)
+- ✅ **核心运行验证**: 11 个容器全 healthy / 前端 200 / API `/health` healthy / LiteLLM gpt-5.5 chat 通 / LiteLLM text-embedding-v3 1024 维通 / 两个真实 PDF (简历 222KB + 技术规范 661KB) 全程 parse → completed
+- 备注: GitHub 服务端 unreachable git objects 通常 30-90 天后自动 GC;期间理论上仍可通过旧 commit sha URL 访问到旧域名 (担心可联系 Support 立即清理)
