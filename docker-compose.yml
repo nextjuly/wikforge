@@ -125,7 +125,9 @@ services:
       UI_USERNAME: ${LITELLM_UI_USERNAME:-admin}
       UI_PASSWORD: ${LITELLM_UI_PASSWORD:-admin}
       # 上游模型凭证 - 由 wikforge .env 注入,不写入镜像
+      CPA_API_BASE: ${CPA_API_BASE:-https://api.openai.com/v1}
       CPA_API_KEY: ${CPA_API_KEY:-}
+      DASHSCOPE_API_BASE: ${DASHSCOPE_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
     ports:
       - "${LITELLM_PORT:-4000}:4000"

@@ -16,6 +16,9 @@
 *.pfx
 secrets/
 backups/
+# git-filter-repo 替换规则文件 (含真实敏感字符串, 跑完务必删)
+.git-replacements*.txt
+.git-rewrites*.txt
 
 # ─── Python ─────────────────────────────────────────────────────────
 .venv/

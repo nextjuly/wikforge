@@ -19,13 +19,15 @@
 # ─────────────────────────────────────────────────────────────────────────
 _platforms:
   # CPA 网关: 提供 OpenAI / Claude / Qwen / GLM / DeepSeek / Kimi 等多家模型
+  # base URL 与 API key 都从 .env 注入,避免硬编码网关域名 (个人隐私 + 内网安全)
   cpa: &cpa
-    api_base: https://litellm-upstream/v1
+    api_base: os.environ/CPA_API_BASE
     api_key: os.environ/CPA_API_KEY
 
   # 阿里云百炼 (DashScope OpenAI 兼容协议): 提供 Embedding / 通义千问系列
+  # 公网公开端点,可硬编码;但为统一仍走 env 注入,方便后期切到代理
   dashscope: &dashscope
-    api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_base: os.environ/DASHSCOPE_API_BASE
     api_key: os.environ/DASHSCOPE_API_KEY
 
 
