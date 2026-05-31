@@ -373,7 +373,7 @@ wikforge/
 
 ## 🔐 安全
 
-私有仓库, 内网部署。
+内网部署。
 
 - ✅ `.env` 在 `.gitignore` 第 1 行, 凭证不入库
 - ✅ `secrets/` 目录在 `.gitignore`, 本地凭证速查表 (`secrets/CREDENTIALS.md`) 永不入库
